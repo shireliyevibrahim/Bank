@@ -1,0 +1,184 @@
+import json
+import os
+import hashlib
+
+# Məlumat faylları
+ACCOUNTS_FILE = "accounts.json"
+TRANSACTIONS_FILE = "transactions.json"
+
+# -----> ŞİFRƏLƏMƏ FUNKSİYASI <-----
+def encrypt_data(data):
+    """Sadə şifrələmə (hash) metodu - CVV və kart məlumatları üçün"""
+    return hashlib.sha256(data.encode()).hexdigest()
+
+# -----> MƏLUMATLARI YÜKLƏMƏ VƏ YAZMA <-----
+def load_data(file, default_value):
+    """Fayldan JSON məlumatlarını oxuyur"""
+    if not os.path.exists(file):
+        return default_value
+    with open(file, "r") as f:
+        return json.load(f)
+
+def save_data(file, data):
+    """JSON məlumatlarını fayla yazır"""
+    with open(file, "w") as f:
+        json.dump(data, f, indent=4)
+
+# -----> HESAB YARATMA <-----
+def create_account(fullname, card_number, cvv, exp_date, currency, role):
+    """Yeni bank hesabı yaradır"""
+    accounts = load_data(ACCOUNTS_FILE, [])
+
+    # Kart məlumatlarını şifrələyirik
+    account = {
+        "fullname": fullname,
+        "card_number": encrypt_data(card_number),
+        "cvv": encrypt_data(cvv),
+        "exp_date": exp_date,
+        "currency": currency,
+        "role": role,  # "Manager" və ya "Customer"
+        "balance": 100.0  # Başlanğıc balans
+    }
+
+    accounts.append(account)
+    save_data(ACCOUNTS_FILE, accounts)
+    print(f"✅ Yeni hesab yaradıldı: {fullname}")
+
+# -----> HESAB AXTARMA <-----
+def find_account(card_number):
+    """Kart nömrəsinə görə hesabı tapır"""
+    accounts = load_data(ACCOUNTS_FILE, [])
+    for account in accounts:
+        if account["card_number"] == encrypt_data(card_number):
+            return account
+    return None
+
+# -----> PUL KÖÇÜRMƏ <-----
+def transfer_money(from_card, to_card, amount):
+    """Bir hesatdan digərinə pul köçürür"""
+    accounts = load_data(ACCOUNTS_FILE, [])
+    
+    sender = find_account(from_card)
+    receiver = find_account(to_card)
+
+    if not sender or not receiver:
+        print("❌ Hesab tapılmadı!")
+        return
+    
+    if sender["balance"] < amount:
+        print("❌ Balansda kifayət qədər vəsait yoxdur!")
+        return
+    
+    # Pul köçürülməsi
+    sender["balance"] -= amount
+    receiver["balance"] += amount
+
+    save_data(ACCOUNTS_FILE, accounts)
+    log_transaction(from_card, to_card, amount)
+    print(f"✅ {amount} {sender['currency']} köçürüldü: {receiver['fullname']}")
+
+# -----> ƏMƏLİYYATLARI QEYDƏ ALMA <-----
+def log_transaction(from_card, to_card, amount):
+    """Əməliyyatları log edir"""
+    transactions = load_data(TRANSACTIONS_FILE, [])
+    
+    transaction = {
+        "from": encrypt_data(from_card),
+        "to": encrypt_data(to_card),
+        "amount": amount
+    }
+
+    transactions.append(transaction)
+    save_data(TRANSACTIONS_FILE, transactions)
+    print("📜 Əməliyyat qeydə alındı.")
+
+# -----> BALANSI YOXLAMA <-----
+def check_balance(card_number):
+    """Hesab balansını göstərir"""
+    account = find_account(card_number)
+    if account:
+        print(f"💰 Balans: {account['balance']} {account['currency']}")
+    else:
+        print("❌ Hesab tapılmadı!")
+
+# -----> KOMİSSİYA HESABLANMASI <-----
+def apply_commission(amount, type="fixed", value=5):
+    """Komissiya hesablayır: sabit və ya faiz"""
+    if type == "fixed":
+        return max(0, amount - value)
+    elif type == "percent":
+        return amount * (1 - value / 100)
+    return amount
+
+# -----> KREDİT HESABLANMASI <-----
+def calculate_credit(amount, interest_rate, cashback=0, loyalty_bonus=0):
+    """Kredit borcunu hesablayır"""
+    total_payable = amount * (1 + interest_rate / 100)
+    return total_payable - cashback - loyalty_bonus
+
+# -----> ADMIN PANELİ <-----
+def admin_panel():
+    while True:
+        print("\n🔹 ADMIN PANELİ 🔹")
+        print("1. Yeni hesab yarat")
+        print("2. Hesab balansına bax")
+        print("3. Pul köçür")
+        print("4. Çıxış")
+
+        choice = input("Seçim edin: ")
+
+        if choice == "1":
+            fullname = input("Ad və soyad: ")
+            card_number = input("Kart nömrəsi: ")
+            cvv = input("CVV: ")
+            exp_date = input("Bitmə tarixi (MM/YY): ")
+            currency = input("Valyuta: ")
+            role = input("Rol (Manager/Customer): ")
+            create_account(fullname, card_number, cvv, exp_date, currency, role)
+
+        elif choice == "2":
+            card_number = input("Kart nömrəsini daxil edin: ")
+            check_balance(card_number)
+
+        elif choice == "3":
+            from_card = input("Göndərən kart nömrəsi: ")
+            to_card = input("Qəbul edən kart nömrəsi: ")
+            amount = float(input("Məbləğ: "))
+            transfer_money(from_card, to_card, amount)
+
+        elif choice == "4":
+            print("Çıxış edilir...")
+            break
+        else:
+            print("❌ Yanlış seçim! Yenidən cəhd edin.")
+
+# -----> MƏLUMATLARI YAZDIRMAQ ÜÇÜN <-----
+def display_accounts():
+    """Bütün hesabları göstərir (Yalnız adminlər üçün)"""
+    accounts = load_data(ACCOUNTS_FILE, [])
+    for acc in accounts:
+        print(f"👤 {acc['fullname']} | Balans: {acc['balance']} {acc['currency']}")
+
+# -----> MƏNÜ <-----
+def main_menu():
+    while True:
+        print("\n🔹 BANK SİSTEMİ 🔹")
+        print("1. Admin Panel")
+        print("2. Hesabları Göstər (Adminlər üçün)")
+        print("3. Çıxış")
+
+        choice = input("Seçim edin: ")
+
+        if choice == "1":
+            admin_panel()
+        elif choice == "2":
+            display_accounts()
+        elif choice == "3":
+            print("Çıxış edilir...")
+            break
+        else:
+            print("❌ Yanlış seçim! Yenidən cəhd edin.")
+
+# -----> PROQRAMI BAŞLATMAQ <-----
+if __name__ == "__main__":
+    main_menu()
